@@ -14,14 +14,10 @@ namespace WorldMod.Speed
         private int _selectedMode = 2; 
         private float _level = 1.0f;
         private float _currentSpeed = 1.0f;
-
-        // Optimization: Store the NPC so we don't have to search for it every frame
-        private GameObject _targetNpc;
-        private float _searchTimer = 0f;
+        private float _pulseTimer = 0f;
 
         void Awake()
         {
-            // Load saved position and settings
             _bubbleRect.x = PlayerPrefs.GetFloat("Mod_BubbleX", 50);
             _bubbleRect.y = PlayerPrefs.GetFloat("Mod_BubbleY", 300);
             _selectedMode = PlayerPrefs.GetInt("Mod_SpeedMode", 2);
@@ -30,26 +26,18 @@ namespace WorldMod.Speed
 
         void OnGUI()
         {
-            // Set global scale for mobile touch screens
+            // Fixes touch/UI scaling for mobile
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(Screen.width / 1920f, Screen.height / 1080f, 1));
 
             if (!_showMenu)
-            {
-                // DragWindow MUST be called at the end of the window function to work with buttons
-                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "DRAG ME");
-            }
+                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "DRAG AREA");
             else
-            {
-                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "SPRINTMASTER CONTROL");
-            }
+                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "NPC MASTER CONTROL");
         }
 
         void DrawBubble(int windowID)
         {
-            // We leave a small "handle" at the top for dragging, button is slightly lower
-            if (GUI.Button(new Rect(10, 30, 180, 60), "OPEN MENU")) _showMenu = true;
-            
-            // This allows the "DRAG ME" title bar to be the touch handle
+            if (GUI.Button(new Rect(10, 35, 180, 55), "OPEN MENU")) _showMenu = true;
             GUI.DragWindow(new Rect(0, 0, 200, 30));
         }
 
@@ -59,49 +47,68 @@ namespace WorldMod.Speed
             float val = Mathf.Floor(_level);
             _currentSpeed = (_selectedMode == 0) ? val : (_selectedMode == 1 ? 1f / val : 1f);
             
-            GUILayout.Label($"<size=30>Target Speed: {_currentSpeed:F2}x</size>");
+            GUILayout.Label($"<size=30>NPC Power: {_currentSpeed:F2}x</size>");
 
-            if (GUILayout.Toggle(_selectedMode == 0, " SPEED UP")) _selectedMode = 0;
-            if (GUILayout.Toggle(_selectedMode == 1, " SLOW DOWN")) _selectedMode = 1;
+            if (GUILayout.Toggle(_selectedMode == 0, " SUPER FAST")) _selectedMode = 0;
+            if (GUILayout.Toggle(_selectedMode == 1, " SUPER SLOW")) _selectedMode = 1;
             if (GUILayout.Toggle(_selectedMode == 2, " NORMAL")) _selectedMode = 2;
 
             _level = GUILayout.HorizontalSlider(_level, 1f, 10f);
             
             GUILayout.Space(40);
-            if (GUILayout.Button("CLOSE & SAVE", GUILayout.Height(80))) 
-            {
-                PlayerPrefs.SetFloat("Mod_BubbleX", _bubbleRect.x);
-                PlayerPrefs.SetFloat("Mod_BubbleY", _bubbleRect.y);
-                PlayerPrefs.Save();
-                _showMenu = false;
-            }
+            if (GUILayout.Button("FORCE UPDATE ALL NPCs", GUILayout.Height(80))) { ForcePulse(); }
+            
+            if (GUILayout.Button("SAVE & CLOSE", GUILayout.Height(80))) { SaveSettings(); _showMenu = false; }
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
 
         void Update()
         {
-            // 1. Search for Sprintmaster once every 2 seconds (Prevents FPS drop)
-            _searchTimer += Time.deltaTime;
-            if (_searchTimer >= 2f || _targetNpc == null)
-            {
-                _targetNpc = GameObject.Find("Sprintmaster");
-                // If direct find fails, try the common mobile name variation
-                if (_targetNpc == null) _targetNpc = GameObject.Find("Sprintmaster(Clone)");
-                _searchTimer = 0;
-            }
+            // Safety: Keep player timescale at 1.0
+            Time.timeScale = 1.0f;
 
-            // 2. Force Speed if target is found
-            if (_targetNpc != null)
+            // Slow Pulse: Update everything on the NPC layer every 2 seconds to keep FPS high
+            _pulseTimer += Time.deltaTime;
+            if (_pulseTimer >= 2.0f)
             {
-                // Force visual animation speed
-                var anim = _targetNpc.GetComponentInChildren<Animator>(true);
-                if (anim != null) anim.speed = _currentSpeed;
-
-                // Force internal logic speed (Spine/PlayMaker hooks)
-                _targetNpc.SendMessage("set_timeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                _targetNpc.SendMessage("SetFsmSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                ForcePulse();
+                _pulseTimer = 0;
             }
+        }
+
+        private void ForcePulse()
+        {
+            // We search for everything, but filter by LAYER to save performance
+            GameObject[] allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
+            foreach (GameObject obj in allObjects)
+            {
+                // Layer 12 is the standard NPC layer. Layer 11 is Enemies.
+                if (obj.layer == 12 || obj.layer == 11)
+                {
+                    // 1. Force the Animator (Unity standard)
+                    var anim = obj.GetComponentInChildren<Animator>(true);
+                    if (anim != null) anim.speed = _currentSpeed;
+
+                    // 2. Force PlayMaker FSMs (The 'Brain' of Sprintmaster)
+                    obj.SendMessage("SetFsmSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+
+                    // 3. Force Spine Skeleton (The visual skeleton)
+                    obj.SendMessage("set_timeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                    
+                    // 4. Force Custom Speed Variables
+                    obj.SendMessage("set_speed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                }
+            }
+        }
+
+        void SaveSettings()
+        {
+            PlayerPrefs.SetFloat("Mod_BubbleX", _bubbleRect.x);
+            PlayerPrefs.SetFloat("Mod_BubbleY", _bubbleRect.y);
+            PlayerPrefs.SetInt("Mod_SpeedMode", _selectedMode);
+            PlayerPrefs.SetFloat("Mod_SpeedLevel", _level);
+            PlayerPrefs.Save();
         }
     }
 }
