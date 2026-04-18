@@ -37,5 +37,10 @@
       <HintPath>UnityEngine.Physics2DModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>
