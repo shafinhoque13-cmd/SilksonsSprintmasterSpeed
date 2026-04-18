@@ -9,7 +9,7 @@ namespace WorldMod.Speed
     {
         private bool _showMenu = false;
         
-        // Moveable Bubble Rect
+        // Rects for the UI
         private Rect _bubbleRect = new Rect(20, 300, 120, 60); 
         private Rect _windowRect = new Rect(100, 100, 400, 500);
         
@@ -19,20 +19,21 @@ namespace WorldMod.Speed
 
         void Awake()
         {
-            // Load saved position and settings
+            // Load saved settings
             _bubbleRect.x = PlayerPrefs.GetFloat("BubbleX", 20);
             _bubbleRect.y = PlayerPrefs.GetFloat("BubbleY", 300);
             _selectedMode = PlayerPrefs.GetInt("Mod_SpeedMode", 2);
             _level = PlayerPrefs.GetFloat("Mod_SpeedLevel", 1.0f);
+            
+            Logger.LogInfo("Speed Mod Initialized");
         }
 
         void OnGUI()
         {
             if (!_showMenu)
             {
-                // DRAGGABLE BUBBLE LOGIC
-                // We use a GUI.Window for the bubble too, so it can be dragged!
-                _bubbleRect = GUI.Window(1, _bubbleRect, DrawBubble, "");
+                // Use a unique Window ID (e.g., 99) for the bubble to prevent conflicts
+                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "");
             }
             else
             {
@@ -40,14 +41,14 @@ namespace WorldMod.Speed
             }
         }
 
-        // The logic for the small floating bubble
         void DrawBubble(int windowID)
         {
+            // The button fills the window
             if (GUI.Button(new Rect(0, 0, _bubbleRect.width, _bubbleRect.height), "SPEED MOD"))
             {
                 _showMenu = true;
             }
-            // This line makes the bubble draggable on your screen
+            // Dragging enabled for the whole bubble area
             GUI.DragWindow(new Rect(0, 0, 10000, 10000));
         }
 
@@ -56,20 +57,23 @@ namespace WorldMod.Speed
             GUILayout.BeginVertical();
             GUILayout.Space(10);
 
-            // Logic: 1x to 5x
+            // MODE 0: INCREASE (1x, 2x, 3x, 4x, 5x)
             if (GUILayout.Toggle(_selectedMode == 0, " [MODE] INCREASE SPEED")) _selectedMode = 0;
             if (_selectedMode == 0)
             {
-                GUILayout.Label($"Enemy Action Speed: {(int)_level}X");
+                GUILayout.Label($"Speed Multiplier: {(int)_level}x");
                 _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
             }
 
             GUILayout.Space(15);
 
+            // MODE 1: DECREASE (1/1, 1/2, 1/3, 1/4, 1/5)
             if (GUILayout.Toggle(_selectedMode == 1, " [MODE] DECREASE SPEED")) _selectedMode = 1;
             if (_selectedMode == 1)
             {
-                GUILayout.Label($"Enemy Action Slowness: {(int)_level}");
+                // Calculation shown to user: 1.0 / Level
+                float displaySpeed = 1.0f / (float)Math.Floor(_level);
+                GUILayout.Label($"Slowness Level: {(int)_level} (Speed: {displaySpeed:F2}x)");
                 _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
             }
 
@@ -91,20 +95,17 @@ namespace WorldMod.Speed
             GUI.DragWindow();
         }
 
-        void SaveSettings()
-        {
-            PlayerPrefs.SetInt("Mod_SpeedMode", _selectedMode);
-            PlayerPrefs.SetFloat("Mod_SpeedLevel", _level);
-            PlayerPrefs.SetFloat("BubbleX", _bubbleRect.x);
-            PlayerPrefs.SetFloat("BubbleY", _bubbleRect.y);
-            PlayerPrefs.Save();
-        }
-
         void Update()
         {
-            if (_selectedMode == 0) _currentSpeedMult = (float)Math.Floor(_level);
-            else if (_selectedMode == 1) _currentSpeedMult = 1.0f / (float)Math.Floor(_level);
-            else _currentSpeedMult = 1.0f;
+            // Core Speed Logic
+            float floorLevel = (float)Math.Floor(_level);
+            
+            if (_selectedMode == 0) 
+                _currentSpeedMult = floorLevel; // 1 to 5
+            else if (_selectedMode == 1) 
+                _currentSpeedMult = 1.0f / floorLevel; // 1.0, 0.5, 0.33, 0.25, 0.20
+            else 
+                _currentSpeedMult = 1.0f;
 
             ApplyTargetedSpeed();
         }
@@ -122,11 +123,20 @@ namespace WorldMod.Speed
                 {
                     anim.speed = _currentSpeedMult;
                 }
-                else if (layer == 9 || layer == 5) // Skip Player/UI
+                else if (layer == 9) // Force Player to stay 1.0
                 {
                     anim.speed = 1.0f;
                 }
             }
+        }
+
+        void SaveSettings()
+        {
+            PlayerPrefs.SetInt("Mod_SpeedMode", _selectedMode);
+            PlayerPrefs.SetFloat("Mod_SpeedLevel", _level);
+            PlayerPrefs.SetFloat("BubbleX", _bubbleRect.x);
+            PlayerPrefs.SetFloat("BubbleY", _bubbleRect.y);
+            PlayerPrefs.Save();
         }
     }
 }
