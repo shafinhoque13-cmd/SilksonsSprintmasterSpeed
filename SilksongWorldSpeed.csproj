@@ -9,11 +9,11 @@
 
   <ItemGroup>
     <Reference Include="BepInEx">
-      <HintPath>./BepInEx.dll</HintPath>
+      <HintPath>BepInEx.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>./UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
