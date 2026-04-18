@@ -4,15 +4,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4  # Updated from v3 to v4
+
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4 # Updated from v3 to v4
         with:
           dotnet-version: 6.0.x
-      - name: Build
+
+      - name: Build Mod
         run: dotnet build --configuration Release
-      - name: Upload
-        uses: actions/upload-artifact@v3
+
+      - name: Upload Finished Mod
+        uses: actions/upload-artifact@v4 # This is the critical fix
         with:
           name: WorldSpeedController
           path: bin/Release/netstandard2.1/*.dll
