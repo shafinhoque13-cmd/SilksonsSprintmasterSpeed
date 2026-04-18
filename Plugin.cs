@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Configuration;
 using UnityEngine;
 using System;
 
@@ -8,51 +7,71 @@ namespace WorldMod.Speed
     [BepInPlugin("com.game.worldspeed", "World Speed Controller", "1.0.0")]
     public class WorldSpeedPlugin : BaseUnityPlugin
     {
-        public static ConfigEntry<float> TargetSpeed;
-        private float _lastSpeed = 1.0f;
-
-        void Awake()
+        // Settings states
+        private int _selectedSection = 2; // 0=Increase, 1=Decrease, 2=Normal
+        private float _level = 1.0f;
+        
+        // This is the function the Android Port's "Mod List" looks for
+        void OnGUI()
         {
-            // Creates the slider in the BepInEx/Mod List menu
-            TargetSpeed = Config.Bind("Settings", "Enemy Speed", 1.0f, 
-                new ConfigDescription("Adjust world speed (0.9 to 5.0)", 
-                new AcceptableValueRange<float>(0.9f, 5.0f)));
-            
-            Logger.LogInfo("Silksong World Speed Mod Loaded Successfully!");
+            // This 'GUILayout' container will appear inside the Mod List when you tap the mod
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("--- SPEED SETTINGS ---");
+
+            // Option 1: Increase
+            if (GUILayout.Toggle(_selectedSection == 0, "Increase Speed Mode")) _selectedSection = 0;
+            if (_selectedSection == 0)
+            {
+                GUILayout.Label($"Level: {(int)_level}");
+                _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
+            }
+
+            GUILayout.Space(10);
+
+            // Option 2: Decrease
+            if (GUILayout.Toggle(_selectedSection == 1, "Decrease Speed Mode")) _selectedSection = 1;
+            if (_selectedSection == 1)
+            {
+                GUILayout.Label($"Level: {(int)_level}");
+                _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
+            }
+
+            GUILayout.Space(10);
+
+            // Option 3: Normal
+            if (GUILayout.Toggle(_selectedSection == 2, "Normal Speed (Reset)")) _selectedSection = 2;
+
+            GUILayout.EndVertical();
         }
 
         void Update()
         {
-            // Only runs the update if you actually move the slider
-            if (Math.Abs(TargetSpeed.Value - _lastSpeed) > 0.01f)
-            {
-                ApplySpeedChange(TargetSpeed.Value);
-                _lastSpeed = TargetSpeed.Value;
-            }
+            float targetSpeed = 1.0f;
+
+            if (_selectedSection == 0) // Increase: Level 1=1.8x, Level 5=5.0x
+                targetSpeed = 1.0f + ((float)Math.Floor(_level) * 0.8f);
+            else if (_selectedSection == 1) // Decrease: Level 1=0.85x, Level 5=0.25x
+                targetSpeed = 1.0f - ((float)Math.Floor(_level) * 0.15f);
+            else // Normal
+                targetSpeed = 1.0f;
+
+            ApplySpeed(targetSpeed);
         }
 
-        private void ApplySpeedChange(float newSpeed)
+        private void ApplySpeed(float speed)
         {
-            // Unity 6 modern method: FindObjectsByType is faster and removes warnings
-            // We use the full 'UnityEngine.Object' to avoid the CS0234 error
             Animator[] allAnimators = UnityEngine.Object.FindObjectsByType<Animator>(FindObjectsSortMode.None);
-            
             foreach (Animator anim in allAnimators)
             {
                 if (anim == null) continue;
-
-                // Layer 9 is Hornet. We keep her at 1.0 so the game remains playable.
+                // Layer 9 is the Player. We keep Hornet at 1.0 speed.
                 if (anim.gameObject.layer == 9)
                 {
-                    anim.speed = 1.0f; 
+                    anim.speed = 1.0f;
                     continue;
                 }
-
-                // Apply the custom speed to everything else (Enemies, NPCs)
-                anim.speed = newSpeed;
+                anim.speed = speed;
             }
-            
-            Logger.LogInfo($"World Speed updated to: {newSpeed}");
         }
     }
 }
