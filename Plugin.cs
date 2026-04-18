@@ -9,7 +9,7 @@ namespace WorldMod.Speed
     {
         private bool _showMenu = false;
         private Rect _bubbleRect = new Rect(50, 300, 200, 100); 
-        private Rect _windowRect = new Rect(100, 100, 500, 550);
+        private Rect _windowRect = new Rect(100, 100, 500, 600);
         
         private int _selectedMode = 2; 
         private float _level = 1.0f;
@@ -26,18 +26,19 @@ namespace WorldMod.Speed
 
         void OnGUI()
         {
+            // Mobile UI Scaling
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(Screen.width / 1920f, Screen.height / 1080f, 1));
 
             if (!_showMenu)
-                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "DRAG HERE");
+                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "DRAG BAR");
             else
-                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "RUNNER CONTROL");
+                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "QUEST NPC CONTROL");
         }
 
         void DrawBubble(int windowID)
         {
-            if (GUI.Button(new Rect(10, 35, 180, 55), "MENU")) _showMenu = true;
-            GUI.DragWindow(new Rect(0, 0, 200, 30));
+            if (GUI.Button(new Rect(10, 35, 180, 55), "OPEN MOD")) _showMenu = true;
+            GUI.DragWindow(new Rect(0, 0, 200, 30)); // Drag handle at the top
         }
 
         void DrawMainWindow(int windowID)
@@ -46,18 +47,18 @@ namespace WorldMod.Speed
             float val = Mathf.Floor(_level);
             _currentSpeed = (_selectedMode == 0) ? val : (_selectedMode == 1 ? 1f / val : 1f);
             
-            GUILayout.Label($"<size=30>Runner Speed: {_currentSpeed:F2}x</size>");
+            GUILayout.Label($"<size=30>NPC Multiplier: {_currentSpeed:F2}x</size>");
 
-            if (GUILayout.Toggle(_selectedMode == 0, " SPRINT")) _selectedMode = 0;
-            if (GUILayout.Toggle(_selectedMode == 1, " SLOW WALK")) _selectedMode = 1;
-            if (GUILayout.Toggle(_selectedMode == 2, " NORMAL")) _selectedMode = 2;
+            if (GUILayout.Toggle(_selectedMode == 0, " FAST SPEED")) _selectedMode = 0;
+            if (GUILayout.Toggle(_selectedMode == 1, " SLOW MOTION")) _selectedMode = 1;
+            if (GUILayout.Toggle(_selectedMode == 2, " NORMAL (1x)")) _selectedMode = 2;
 
             _level = GUILayout.HorizontalSlider(_level, 1f, 10f);
             
             GUILayout.Space(30);
-            if (GUILayout.Button("FORCE SPRINTMASTER", GUILayout.Height(80))) { ApplyToRunner(); }
+            if (GUILayout.Button("FORCE UPDATE NPC", GUILayout.Height(80))) { ApplyToQuestNpc(); }
             
-            if (GUILayout.Button("CLOSE", GUILayout.Height(60))) { 
+            if (GUILayout.Button("CLOSE & SAVE", GUILayout.Height(70))) { 
                 PlayerPrefs.SetFloat("Mod_BubbleX", _bubbleRect.x);
                 PlayerPrefs.SetFloat("Mod_BubbleY", _bubbleRect.y);
                 PlayerPrefs.Save();
@@ -69,40 +70,40 @@ namespace WorldMod.Speed
 
         void Update()
         {
-            // Pulse every 2 seconds to catch the Runner if he spawns/activates
+            // Update every 2 seconds to make sure he doesn't reset after a dialogue
             _pulseTimer += Time.deltaTime;
             if (_pulseTimer >= 2.0f)
             {
-                ApplyToRunner();
+                ApplyToQuestNpc();
                 _pulseTimer = 0;
             }
         }
 
-        private void ApplyToRunner()
+        private void ApplyToQuestNpc()
         {
-            // Using the modern, faster search method
+            // Fastest way to find objects in Unity 2022+ (Fixes your warnings)
             GameObject[] all = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
             
             foreach (var obj in all)
             {
                 if (obj == null) continue;
+                string name = obj.name.ToUpper();
 
-                // Targeting the Sprintmaster Runner specifically
-                if (obj.name.ToLower().Contains("sprintmaster") || obj.name.ToLower().Contains("runner"))
+                // Target both Sprintmaster and Speedmaster specifically
+                if (name.Contains("SPRINTMASTER") || name.Contains("SPEEDMASTER"))
                 {
-                    // 1. Force Visual Speed (Spine & Animator)
+                    // 1. Force the Visuals (Animators/Spine)
                     obj.SendMessage("set_timeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                    var anim = obj.GetComponentInChildren<Animator>();
+                    var anim = obj.GetComponentInChildren<Animator>(true);
                     if (anim != null) anim.speed = _currentSpeed;
 
-                    // 2. Force Logic Speed (PlayMaker FSM)
+                    // 2. Force the Brain (FSM logic for Quests)
                     obj.SendMessage("SetFsmSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
                     obj.SendMessage("SetFsmTimeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
 
-                    // 3. Force Physical Speed (Velocity Variables)
-                    // This forces the "Walk Speed" and "Run Speed" internal variables
-                    obj.SendMessage("SetSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                    // 3. Force the Physics (Walking/Running)
                     obj.SendMessage("set_speed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                    obj.SendMessage("SetSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
                 }
             }
         }
