@@ -8,124 +8,89 @@ namespace WorldMod.Speed
     public class WorldSpeedPlugin : BaseUnityPlugin
     {
         private bool _showMenu = false;
-        
-        // Rects for the UI
         private Rect _bubbleRect = new Rect(20, 300, 120, 60); 
         private Rect _windowRect = new Rect(100, 100, 400, 500);
         
-        private int _selectedMode = 2; // 0=Inc, 1=Dec, 2=Norm
+        private int _selectedMode = 2; 
         private float _level = 1.0f;
         private float _currentSpeedMult = 1.0f;
 
         void Awake()
         {
-            // Load saved settings
             _bubbleRect.x = PlayerPrefs.GetFloat("BubbleX", 20);
             _bubbleRect.y = PlayerPrefs.GetFloat("BubbleY", 300);
             _selectedMode = PlayerPrefs.GetInt("Mod_SpeedMode", 2);
             _level = PlayerPrefs.GetFloat("Mod_SpeedLevel", 1.0f);
-            
-            Logger.LogInfo("Speed Mod Initialized");
         }
 
         void OnGUI()
         {
-            if (!_showMenu)
-            {
-                // Use a unique Window ID (e.g., 99) for the bubble to prevent conflicts
-                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "");
-            }
-            else
-            {
-                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "ENEMY SPEED CONTROL");
-            }
+            if (!_showMenu) _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "");
+            else _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "ENEMY SPEED CONTROL");
         }
 
         void DrawBubble(int windowID)
         {
-            // The button fills the window
-            if (GUI.Button(new Rect(0, 0, _bubbleRect.width, _bubbleRect.height), "SPEED MOD"))
-            {
-                _showMenu = true;
-            }
-            // Dragging enabled for the whole bubble area
+            if (GUI.Button(new Rect(0, 0, _bubbleRect.width, _bubbleRect.height), "SPEED MOD")) _showMenu = true;
             GUI.DragWindow(new Rect(0, 0, 10000, 10000));
         }
 
         void DrawMainWindow(int windowID)
         {
             GUILayout.BeginVertical();
-            GUILayout.Space(10);
+            GUILayout.Label($"Multiplier: {(_selectedMode == 1 ? (1f/(float)Math.Floor(_level)).ToString("F2") : ((int)_level).ToString())}x");
+            
+            if (GUILayout.Toggle(_selectedMode == 0, " INCREASE")) _selectedMode = 0;
+            if (GUILayout.Toggle(_selectedMode == 1, " DECREASE")) _selectedMode = 1;
+            if (GUILayout.Toggle(_selectedMode == 2, " NORMAL")) _selectedMode = 2;
 
-            // MODE 0: INCREASE (1x, 2x, 3x, 4x, 5x)
-            if (GUILayout.Toggle(_selectedMode == 0, " [MODE] INCREASE SPEED")) _selectedMode = 0;
-            if (_selectedMode == 0)
-            {
-                GUILayout.Label($"Speed Multiplier: {(int)_level}x");
-                _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
-            }
+            _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
 
-            GUILayout.Space(15);
-
-            // MODE 1: DECREASE (1/1, 1/2, 1/3, 1/4, 1/5)
-            if (GUILayout.Toggle(_selectedMode == 1, " [MODE] DECREASE SPEED")) _selectedMode = 1;
-            if (_selectedMode == 1)
-            {
-                // Calculation shown to user: 1.0 / Level
-                float displaySpeed = 1.0f / (float)Math.Floor(_level);
-                GUILayout.Label($"Slowness Level: {(int)_level} (Speed: {displaySpeed:F2}x)");
-                _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
-            }
-
-            GUILayout.Space(15);
-
-            if (GUILayout.Toggle(_selectedMode == 2, " [MODE] NORMAL")) _selectedMode = 2;
-
-            GUILayout.FlexibleSpace();
-
-            GUI.color = Color.green;
             if (GUILayout.Button("SAVE & CLOSE", GUILayout.Height(60)))
             {
                 SaveSettings();
                 _showMenu = false;
             }
-            GUI.color = Color.white;
-
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
 
         void Update()
         {
-            // Core Speed Logic
             float floorLevel = (float)Math.Floor(_level);
-            
-            if (_selectedMode == 0) 
-                _currentSpeedMult = floorLevel; // 1 to 5
-            else if (_selectedMode == 1) 
-                _currentSpeedMult = 1.0f / floorLevel; // 1.0, 0.5, 0.33, 0.25, 0.20
-            else 
-                _currentSpeedMult = 1.0f;
+            _currentSpeedMult = _selectedMode == 0 ? floorLevel : (_selectedMode == 1 ? 1.0f / floorLevel : 1.0f);
 
-            ApplyTargetedSpeed();
+            ApplyDeepHooks();
         }
 
-        private void ApplyTargetedSpeed()
+        private void ApplyDeepHooks()
         {
-            Animator[] anims = UnityEngine.Object.FindObjectsByType<Animator>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            foreach (var anim in anims)
+            // Find all potential actors (Enemies=11, NPCs=12, Projectiles=17)
+            GameObject[] allObjects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            
+            foreach (GameObject obj in allObjects)
             {
-                if (anim == null) continue;
-                int layer = anim.gameObject.layer;
+                if (obj == null) continue;
+                int layer = obj.layer;
 
-                // Targeted Layers: 11 (Enemy), 12 (NPC), 17 (Enemy Projectiles)
                 if (layer == 11 || layer == 12 || layer == 17)
                 {
-                    anim.speed = _currentSpeedMult;
+                    // 1. Standard Animators
+                    var anim = obj.GetComponent<Animator>();
+                    if (anim != null) anim.speed = _currentSpeedMult;
+
+                    // 2. Spine / Skeleton Animations (Common for NPC abilities)
+                    // We use SendMessage to avoid needing the Spine DLL as a reference
+                    obj.SendMessage("set_timeScale", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+
+                    // 3. PlayMaker FSMs (Common for Boss/NPC logic)
+                    obj.SendMessage("SetFsmSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
                 }
-                else if (layer == 9) // Force Player to stay 1.0
+                else if (layer == 9) // Protect Hornet
                 {
-                    anim.speed = 1.0f;
+                    var anim = obj.GetComponent<Animator>();
+                    if (anim != null) anim.speed = 1.0f;
+                    obj.SendMessage("set_timeScale", 1.0f, SendMessageOptions.DontRequireReceiver);
                 }
             }
         }
