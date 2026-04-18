@@ -9,7 +9,7 @@ namespace WorldMod.Speed
     {
         private bool _showMenu = false;
         private Rect _bubbleRect = new Rect(20, 300, 160, 70); 
-        private Rect _windowRect = new Rect(100, 100, 450, 500);
+        private Rect _windowRect = new Rect(100, 100, 450, 400);
         
         private int _selectedMode = 2; 
         private float _level = 1.0f;
@@ -27,18 +27,18 @@ namespace WorldMod.Speed
         void OnGUI()
         {
             if (!_showMenu) _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "");
-            else _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "LITE SPEED CONTROL");
+            else _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "TARGET: SPRINTMASTER");
         }
 
         void DrawBubble(int windowID) {
-            if (GUI.Button(new Rect(5, 5, 150, 60), "SPEED MOD")) _showMenu = true;
+            if (GUI.Button(new Rect(5, 5, 150, 60), "SPEED MENU")) _showMenu = true;
             GUI.DragWindow();
         }
 
         void DrawMainWindow(int windowID) {
             GUILayout.BeginVertical();
             float displayVal = (_selectedMode == 1) ? (1.0f / Mathf.Floor(_level)) : Mathf.Floor(_level);
-            GUILayout.Label($"Speed: {displayVal:F2}x (FPS Optimized)");
+            GUILayout.Label($"Sprintmaster Speed: {displayVal:F2}x");
 
             if (GUILayout.Toggle(_selectedMode == 0, " FAST")) _selectedMode = 0;
             if (GUILayout.Toggle(_selectedMode == 1, " SLOW")) _selectedMode = 1;
@@ -47,10 +47,7 @@ namespace WorldMod.Speed
             _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
             
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("SAVE & CLOSE", GUILayout.Height(70))) { 
-                SaveSettings(); 
-                _showMenu = false; 
-            }
+            if (GUILayout.Button("SAVE & CLOSE", GUILayout.Height(70))) { SaveSettings(); _showMenu = false; }
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
@@ -60,36 +57,39 @@ namespace WorldMod.Speed
             float floorLevel = Mathf.Floor(_level);
             _currentSpeedMult = _selectedMode == 0 ? floorLevel : (_selectedMode == 1 ? 1.0f / floorLevel : 1.0f);
 
-            // Optimization: Only scan every 1.5 seconds to save battery/FPS
+            // Scan every 2 seconds - very light on FPS
             _scanTimer += Time.deltaTime;
-            if (_scanTimer >= 1.5f) {
-                FastNPCUpdate();
+            if (_scanTimer >= 2.0f) {
+                TargetSprintmaster();
                 _scanTimer = 0;
             }
         }
 
-        private void FastNPCUpdate()
+        private void TargetSprintmaster()
         {
-            // Lock Global Time to 1.0 to protect Hornet
+            // Lock Global Time to 1.0 to ensure Hornet stays normal
             Time.timeScale = 1.0f;
 
-            // Only find objects with Rigidbodies (actual enemies/projectiles)
-            // This is 100x faster than finding all GameObjects
-            Rigidbody2D[] bodies = UnityEngine.Object.FindObjectsByType<Rigidbody2D>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            // Find only objects with the exact name "Sprintmaster"
+            GameObject npc = GameObject.Find("Sprintmaster");
             
-            foreach (var rb in bodies)
+            // If the main object isn't found, try finding by partial name (clones/variants)
+            if (npc == null)
             {
-                if (rb == null || rb.gameObject.layer == 9) continue;
+                GameObject[] all = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+                foreach(var o in all) { if(o.name.Contains("Sprintmaster")) { npc = o; break; } }
+            }
 
-                // Apply speed to the Animator on this body
-                var anim = rb.GetComponent<Animator>();
+            if (npc != null)
+            {
+                // 1. Force the Animator speed
+                var anim = npc.GetComponentInChildren<Animator>();
                 if (anim != null) anim.speed = _currentSpeedMult;
 
-                // Force individual script values
-                GameObject target = rb.gameObject;
-                target.SendMessage("set_timeScale", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
-                target.SendMessage("SetSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
-                target.SendMessage("SetFsmSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+                // 2. Force the internal logic/FSM speed
+                npc.SendMessage("set_speed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+                npc.SendMessage("set_timeScale", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+                npc.SendMessage("SetFsmSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
             }
         }
 
