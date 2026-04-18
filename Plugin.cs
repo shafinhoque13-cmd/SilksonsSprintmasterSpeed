@@ -1,7 +1,6 @@
 using BepInEx;
 using UnityEngine;
 using System;
-using System.Collections.Generic;
 
 namespace WorldMod.Speed
 {
@@ -28,7 +27,7 @@ namespace WorldMod.Speed
         void OnGUI()
         {
             if (!_showMenu) _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "");
-            else _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "NPC & ENEMY SPEED CONTROL");
+            else _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "UNIVERSAL SPEED CONTROL");
         }
 
         void DrawBubble(int windowID)
@@ -40,29 +39,20 @@ namespace WorldMod.Speed
         void DrawMainWindow(int windowID)
         {
             GUILayout.BeginVertical();
-            GUILayout.Space(10);
-            
             float displayVal = (_selectedMode == 1) ? (1.0f / Mathf.Floor(_level)) : Mathf.Floor(_level);
-            GUILayout.Label($"Multiplier: {displayVal:F2}x", GUI.skin.label);
+            GUILayout.Label($"Current Speed: {displayVal:F2}x", GUI.skin.label);
 
-            GUILayout.Space(20);
-            if (GUILayout.Toggle(_selectedMode == 0, " [MODE] FAST ENEMIES")) _selectedMode = 0;
-            if (GUILayout.Toggle(_selectedMode == 1, " [MODE] SLOW ENEMIES")) _selectedMode = 1;
-            if (GUILayout.Toggle(_selectedMode == 2, " [MODE] NORMAL (1.0x)")) _selectedMode = 2;
+            if (GUILayout.Toggle(_selectedMode == 0, " FAST MODE")) _selectedMode = 0;
+            if (GUILayout.Toggle(_selectedMode == 1, " SLOW MODE")) _selectedMode = 1;
+            if (GUILayout.Toggle(_selectedMode == 2, " NORMAL MODE")) _selectedMode = 2;
 
-            GUILayout.Space(10);
-            GUILayout.Label($"Level: {(int)_level}");
             _level = GUILayout.HorizontalSlider(_level, 1f, 5f);
 
             GUILayout.Space(30);
-            if (GUILayout.Button("FORCE SCAN AREA", GUILayout.Height(60))) { DeepUpdateNPCs(); }
+            if (GUILayout.Button("REFRESH ALL OBJECTS", GUILayout.Height(60))) { UniversalUpdate(); }
 
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("SAVE & APPLY", GUILayout.Height(70))) 
-            { 
-                SaveSettings(); 
-                _showMenu = false; 
-            }
+            if (GUILayout.Button("SAVE & APPLY", GUILayout.Height(70))) { SaveSettings(); _showMenu = false; }
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
@@ -73,49 +63,52 @@ namespace WorldMod.Speed
             _currentSpeedMult = _selectedMode == 0 ? floorLevel : (_selectedMode == 1 ? 1.0f / floorLevel : 1.0f);
 
             _updateTimer += Time.deltaTime;
-            if (_updateTimer >= 0.5f)
+            if (_updateTimer >= 0.8f) // Scan nearly every second
             {
-                DeepUpdateNPCs();
+                UniversalUpdate();
                 _updateTimer = 0;
             }
         }
 
-        private void DeepUpdateNPCs()
+        private void UniversalUpdate()
         {
-            Time.timeScale = 1.0f; // Lock player physics
+            // KEEP PLAYER PHYSICS NORMAL
+            Time.timeScale = 1.0f;
 
-            GameObject[] allObjects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            // Target EVERY Animator in the game
+            Animator[] allAnims = UnityEngine.Object.FindObjectsByType<Animator>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             
-            foreach (GameObject obj in allObjects)
+            foreach (Animator anim in allAnims)
             {
-                if (obj == null) continue;
+                if (anim == null) continue;
 
-                // Targeted Layers: 11=Enemy, 12=NPC, 17=Projectiles, 22=EnemyDetector
-                if (obj.layer == 11 || obj.layer == 12 || obj.layer == 17 || obj.layer == 22)
+                // PROTECTION: Check by name and layer to ensure we don't touch Hornet
+                string name = anim.gameObject.name.ToLower();
+                int layer = anim.gameObject.layer;
+
+                if (name.Contains("hornet") || name.Contains("player") || layer == 9)
                 {
-                    // Update Animators
-                    Animator[] anims = obj.GetComponentsInChildren<Animator>();
-                    foreach(var a in anims) { a.speed = _currentSpeedMult; }
-
-                    // Update Physics (Handling both old and new Unity physics names)
-                    Rigidbody2D[] rbs = obj.GetComponentsInChildren<Rigidbody2D>();
-                    foreach(var rb in rbs)
-                    {
-                        try {
-                            rb.linearVelocity *= _currentSpeedMult;
-                        } catch {
-                            #pragma warning disable CS0618
-                            rb.velocity *= _currentSpeedMult;
-                            #pragma warning restore CS0618
-                        }
-                    }
-
-                    // Deep Script Hooks
-                    obj.SendMessage("set_speed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
-                    obj.SendMessage("set_timeScale", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
-                    obj.SendMessage("SetFsmSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
-                    obj.SendMessage("SetSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+                    anim.speed = 1.0f; // Force Player to 1.0
+                    continue;
                 }
+
+                // SPEED UP EVERYTHING ELSE
+                anim.speed = _currentSpeedMult;
+
+                // Force individual script speed if it exists
+                anim.gameObject.SendMessage("set_speed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+                anim.gameObject.SendMessage("set_timeScale", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+            }
+
+            // Target EVERY Physics body that isn't the player
+            Rigidbody2D[] allBodies = UnityEngine.Object.FindObjectsByType<Rigidbody2D>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (Rigidbody2D rb in allBodies)
+            {
+                if (rb == null || rb.gameObject.layer == 9) continue;
+
+                // Send speed values to FSMs (Flowchart logic)
+                rb.gameObject.SendMessage("SetSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
+                rb.gameObject.SendMessage("SetFsmSpeed", _currentSpeedMult, SendMessageOptions.DontRequireReceiver);
             }
         }
 
@@ -126,7 +119,7 @@ namespace WorldMod.Speed
             PlayerPrefs.SetFloat("Mod_BubbleX", _bubbleRect.x);
             PlayerPrefs.SetFloat("Mod_BubbleY", _bubbleRect.y);
             PlayerPrefs.Save();
-            DeepUpdateNPCs();
+            UniversalUpdate();
         }
     }
 }
