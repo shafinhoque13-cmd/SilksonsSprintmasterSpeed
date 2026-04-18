@@ -15,6 +15,10 @@ namespace WorldMod.Speed
         private float _level = 1.0f;
         private float _currentSpeed = 1.0f;
 
+        // Optimization: Store the NPC so we can force it every frame
+        private GameObject _npcRef;
+        private float _scanTimer = 0f;
+
         void Awake()
         {
             _bubbleRect.x = PlayerPrefs.GetFloat("Mod_BubbleX", 50);
@@ -28,9 +32,9 @@ namespace WorldMod.Speed
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(Screen.width / 1920f, Screen.height / 1080f, 1));
 
             if (!_showMenu)
-                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "DRAG HERE");
+                _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "DRAG AREA");
             else
-                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "NPC MASTER");
+                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "NPC OVERDRIVE");
         }
 
         void DrawBubble(int windowID)
@@ -45,7 +49,7 @@ namespace WorldMod.Speed
             float val = Mathf.Floor(_level);
             _currentSpeed = (_selectedMode == 0) ? val : (_selectedMode == 1 ? 1f / val : 1f);
             
-            GUILayout.Label($"<size=30>Target Speed: {_currentSpeed:F2}x</size>");
+            GUILayout.Label($"<size=30>NPC Target Speed: {_currentSpeed:F2}x</size>");
 
             if (GUILayout.Toggle(_selectedMode == 0, " FAST")) _selectedMode = 0;
             if (GUILayout.Toggle(_selectedMode == 1, " SLOW")) _selectedMode = 1;
@@ -54,8 +58,7 @@ namespace WorldMod.Speed
             _level = GUILayout.HorizontalSlider(_level, 1f, 10f);
             
             GUILayout.Space(30);
-            // This button now does a "Deep Scan"
-            if (GUILayout.Button("FORCE SPRINTMASTER", GUILayout.Height(80))) { ForceDeepNpc(); }
+            if (GUILayout.Button("RE-SCAN FOR NPC", GUILayout.Height(80))) { ScanForNpc(); }
             
             if (GUILayout.Button("CLOSE", GUILayout.Height(60))) { 
                 PlayerPrefs.SetFloat("Mod_BubbleX", _bubbleRect.x);
@@ -67,33 +70,43 @@ namespace WorldMod.Speed
             GUI.DragWindow();
         }
 
-        private void ForceDeepNpc()
+        void Update()
         {
-            // Use the faster FindObjectsByType
+            // 1. Scan for the NPC once every few seconds if not found
+            _scanTimer += Time.deltaTime;
+            if (_scanTimer >= 3f)
+            {
+                if (_npcRef == null) ScanForNpc();
+                _scanTimer = 0;
+            }
+
+            // 2. FORCE the speed every single frame
+            if (_npcRef != null && _selectedMode != 2)
+            {
+                // Force Spine animation
+                _npcRef.SendMessage("set_timeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                
+                // Force PlayMaker Logic
+                _npcRef.SendMessage("SetFsmSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                _npcRef.SendMessage("SetFsmTimeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+
+                // Force Animator
+                var anim = _npcRef.GetComponentInChildren<Animator>();
+                if (anim != null) anim.speed = _currentSpeed;
+            }
+        }
+
+        private void ScanForNpc()
+        {
             GameObject[] all = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-            
             foreach (var obj in all)
             {
                 if (obj == null) continue;
-
-                // Check for Sprintmaster or any NPC on Layer 12
+                // Target by name or the NPC layer identified in your screenshot/data
                 if (obj.name.Contains("Sprintmaster") || obj.layer == 12)
                 {
-                    // 1. Force the PlayMaker FSM timeScale (The 'Brain')
-                    // Many mobile ports use "SetFsmTimeScale" instead of "SetFsmSpeed"
-                    obj.SendMessage("SetFsmTimeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                    obj.SendMessage("SetFsmSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-
-                    // 2. Force the Spine Skeleton (The 'Body')
-                    obj.SendMessage("set_timeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                    
-                    // 3. Force standard Unity Animator
-                    var anim = obj.GetComponentInChildren<Animator>();
-                    if (anim != null) anim.speed = _currentSpeed;
-
-                    // 4. Manual variable injection (Covers custom logic)
-                    obj.SendMessage("set_speed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                    obj.SendMessage("SetSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                    _npcRef = obj;
+                    return;
                 }
             }
         }
