@@ -1,11 +1,10 @@
 using BepInEx;
 using UnityEngine;
 using System;
-using System.Collections.Generic;
 
 namespace WorldMod.Speed
 {
-    [BepInPlugin("com.game.worldspeed", "World Speed Controller", "1.4.0")]
+    [BepInPlugin("com.game.worldspeed", "World Speed Controller", "1.5.0")]
     public class WorldSpeedPlugin : BaseUnityPlugin
     {
         private bool _showMenu = false;
@@ -15,7 +14,6 @@ namespace WorldMod.Speed
         private int _selectedMode = 2; 
         private float _level = 1.0f;
         private float _currentSpeed = 1.0f;
-        private float _pulseTimer = 0f;
 
         void Awake()
         {
@@ -32,7 +30,7 @@ namespace WorldMod.Speed
             if (!_showMenu)
                 _bubbleRect = GUI.Window(99, _bubbleRect, DrawBubble, "DRAG");
             else
-                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "SPRINTMASTER CONTROL");
+                _windowRect = GUI.Window(0, _windowRect, DrawMainWindow, "FORCE OVERRIDE");
         }
 
         void DrawBubble(int windowID)
@@ -47,16 +45,16 @@ namespace WorldMod.Speed
             float val = Mathf.Floor(_level);
             _currentSpeed = (_selectedMode == 0) ? val : (_selectedMode == 1 ? 1f / val : 1f);
             
-            GUILayout.Label($"<size=35>Race Speed: {_currentSpeed:F2}x</size>");
+            GUILayout.Label($"<size=35>FORCING SPEED: {_currentSpeed:F2}x</size>");
 
-            if (GUILayout.Toggle(_selectedMode == 0, " SUPER FAST")) _selectedMode = 0;
-            if (GUILayout.Toggle(_selectedMode == 1, " SUPER SLOW")) _selectedMode = 1;
+            if (GUILayout.Toggle(_selectedMode == 0, " FAST")) _selectedMode = 0;
+            if (GUILayout.Toggle(_selectedMode == 1, " SLOW")) _selectedMode = 1;
             if (GUILayout.Toggle(_selectedMode == 2, " NORMAL")) _selectedMode = 2;
 
             _level = GUILayout.HorizontalSlider(_level, 1f, 10f);
             
             GUILayout.Space(20);
-            if (GUILayout.Button("FORCE RACE START", GUILayout.Height(100))) { ApplyToRace(); }
+            GUILayout.Label("Status: Targeting Layer 19 & Runner");
             
             if (GUILayout.Button("CLOSE", GUILayout.Height(60))) { 
                 PlayerPrefs.SetFloat("Mod_BubbleX", _bubbleRect.x);
@@ -70,15 +68,14 @@ namespace WorldMod.Speed
 
         void Update()
         {
-            _pulseTimer += Time.deltaTime;
-            if (_pulseTimer >= 0.5f) // Pulse very fast to stay ahead of the game logic
+            // We run this every frame now. It's more aggressive.
+            if (_selectedMode != 2) 
             {
-                ApplyToRace();
-                _pulseTimer = 0;
+                ApplyIronGrip();
             }
         }
 
-        private void ApplyToRace()
+        private void ApplyIronGrip()
         {
             GameObject[] all = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
             
@@ -87,27 +84,35 @@ namespace WorldMod.Speed
                 GameObject obj = all[i];
                 if (obj == null) continue;
 
-                string n = obj.name.ToLower();
-                
-                // Targets based on your radar: Sprintmaster Runner (Layer 19) and Quest objects
-                if (obj.layer == 19 || n.Contains("sprintmaster") || n.Contains("runner") || n.Contains("swift"))
+                // Targeting Layer 19 and names found in your radar
+                if (obj.layer == 19 || obj.name.ToLower().Contains("sprintmaster") || obj.name.ToLower().Contains("runner"))
                 {
-                    // Force the Master TimeScale of the object
-                    obj.SendMessage("set_timeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                    // 1. Force Unity TimeScale (Generic)
+                    obj.transform.localScale = obj.transform.localScale; // Wake up the transform
                     
-                    // Force PlayMaker Quest Logic
-                    obj.SendMessage("SetFsmSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                    obj.SendMessage("SetFsmTimeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                    
-                    // Force the actual Runner speed
-                    obj.SendMessage("SetSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-                    obj.SendMessage("set_speed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
-
-                    // Reach deep into the animations
+                    // 2. Force Animator (Standard Unity)
                     Animator[] anims = obj.GetComponentsInChildren<Animator>(true);
                     for (int j = 0; j < anims.Length; j++) 
                     { 
                         anims[j].speed = _currentSpeed; 
+                    }
+
+                    // 3. Force PlayMaker (The Logic Brain)
+                    // We search for the FSM component directly since SendMessage is failing
+                    Component[] components = obj.GetComponents<Component>();
+                    foreach (var c in components)
+                    {
+                        if (c == null) continue;
+                        string typeName = c.GetType().Name;
+
+                        // This targets PlayMakerFSM, SkeletonAnimation, and custom character controllers
+                        if (typeName.Contains("Fsm") || typeName.Contains("Skeleton") || typeName.Contains("Character"))
+                        {
+                            try {
+                                c.SendMessage("set_timeScale", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                                c.SendMessage("SetSpeed", _currentSpeed, SendMessageOptions.DontRequireReceiver);
+                            } catch {}
+                        }
                     }
                 }
             }
